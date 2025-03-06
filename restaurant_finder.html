@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seattle Restaurant Finder</title>
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.1-dev/mapbox-gl-geocoder.min.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.14.1/mapbox-gl.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.1-dev/mapbox-gl-geocoder.css">
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+
+        .map-container {
+            width: 90%; /* Adjust width as needed */
+            max-width: 1200px; /* Adjust based on your preference */
+            height: 80vh; /* Adjust height as needed */
+            margin: 20px auto; /* Center it */
+            position: relative;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            border-radius: 10px; /* Optional: matches container */
+        }
+
+    
+        /* Control Box Styling */
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            width: 250px;
+        }
+    
+        .control-group {
+            margin-bottom: 15px;
+        }
+    
+        .control-group label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+        }
+    
+        .control-group select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-size: 14px;
+            background: #f9f9f9;
+            box-sizing: border-box;
+        }
+    
+        .apply-button {
+            width: 100%;
+            padding: 10px;
+            background: #242424;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+    
+        .apply-button:hover {
+            background: #0056b3;
+        }
+    
+        .clear-button {
+            width: 100%;
+            padding: 10px;
+            background: #ff4d4d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+    
+        .clear-button:hover {
+            background: #cc0000;
+        }
+
+        /* Side Panel Styling */
+        .side-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            width: 250px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .side-panel h2 {
+            margin: 0 0 10px;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+        }
+
+        .restaurant-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .restaurant-list li {
+            padding: 8px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .restaurant-list li:last-child {
+            border-bottom: none;
+        }
+
+        .restaurant-list strong {
+            font-size: 16px;
+        }
+    
+        /* Geocoder Styling */
+        .mapboxgl-ctrl-geocoder {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: 400px;
+            z-index: 1001;
+        }
+    </style>    
+</head>
+<body>
+
+    <div class="map-container">
+        <!-- Search Bar -->
+        <div id="geocoder" class="geocoder"></div>
+    
+        <!-- Filters -->
+        <div class="controls">
+            <div class="control-group">
+                <label for="cuisine">Cuisine:</label>
+                <select id="cuisine">
+                    <option value="all">All</option>
+                </select>
+            </div>
+    
+            <div class="control-group">
+                <label for="travel-time">Travel Time (mins):</label>
+                <select id="travel-time">
+                    <option value="all" selected>All</option>
+                    <option value="10">10 min</option>
+                    <option value="20">20 min</option>
+                    <option value="30">30 min</option>
+                </select>
+            </div>
+    
+            <button class="apply-button" onclick="updateIsochrone()">Apply Filters</button>
+            <button class="clear-button" onclick="clearSelection()">Clear Selection</button>
+        </div>
+    
+        <!-- Side Panel for Restaurant List -->
+        <div class="side-panel">
+            <h2>Restaurants</h2>
+            <ul id="restaurant-list" class="restaurant-list"></ul>
+        </div>
+    
+        <!-- Map -->
+        <div id="map"></div>
+    </div>
+    
+
+    <script>
+        // Mapbox Access Token
+        mapboxgl.accessToken = 'pk.eyJ1IjoiZ252ZWxleiIsImEiOiJjbTZzdGZzcWMwYjJzMm5wd2xmYnRyeHU0In0.1qw-r2WipRZcibgMfyoLJw';
+
+        let userLocation = null;
+        let restaurantData;
+        let locationMarker = null;
+        let isochroneExists = false;
+
+        // Initialize the Map
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v11',
+            center: [-122.335167, 47.608013],  
+            zoom: 12
+        });
+
+        // Add Geocoder for Location Search
+        const geocoder = new MapboxGeocoder({
+            accessToken: mapboxgl.accessToken,
+            mapboxgl: mapboxgl,
+            marker: false
+        });
+
+        document.getElementById("geocoder").appendChild(geocoder.onAdd(map));
+
+        // Handle Geocoder Selection
+        geocoder.on("result", (event) => {
+            userLocation = event.result.geometry.coordinates;
+            console.log("✅ Geocoded Location:", userLocation);
+
+            map.flyTo({ center: userLocation, zoom: 13 });
+
+            clearPreviousSelections();
+            addLocationMarker(userLocation);
+            updateIsochrone();
+        });
+
+        // Function to Add Location Marker
+        function addLocationMarker(coords) {
+            if (locationMarker) {
+                locationMarker.remove();
+            }
+
+            locationMarker = new mapboxgl.Marker({ color: "red" })
+                .setLngLat(coords)
+                .addTo(map);
+        }
+
+        // Function to Clear Previous Selections
+        function clearPreviousSelections() {
+            if (isochroneExists) {
+                map.removeLayer("isochrone-layer");
+                map.removeSource("isochrone");
+                isochroneExists = false;
+            }
+        }
+
+        // Load GeoJSON Data for Restaurants
+        fetch("assets/seattle_restaurants_final.geojson")
+            .then(response => response.json())
+            .then(data => {
+                restaurantData = data;
+
+                map.on("load", () => {
+                    map.addSource("restaurants", { type: "geojson", data: restaurantData });
+                    map.addLayer({
+                        id: "restaurants-layer",
+                        type: "circle",
+                        source: "restaurants",
+                        paint: {
+                            "circle-radius": 8,              // Keep circle size
+                            "circle-color": "#000000",       // Black color
+                            "circle-stroke-width": 1,        // Thin white border
+                            "circle-stroke-color": "#ffffff" // White border color
+                        }
+                    });
+
+                    updateRestaurantList(restaurantData.features);
+                    populateCuisineDropdown();
+                });
+            });
+
+        // Populate Cuisine Dropdown
+        function populateCuisineDropdown() {
+            const cuisineSet = new Set();
+            restaurantData.features.forEach(feature => {
+                if (Array.isArray(feature.properties.cuisine_type)) {
+                    feature.properties.cuisine_type.forEach(cuisine => cuisineSet.add(cuisine));
+                }
+            });
+
+            const cuisineDropdown = document.getElementById("cuisine");
+            cuisineSet.forEach(cuisine => {
+                const option = document.createElement("option");
+                option.value = cuisine;
+                option.textContent = cuisine;
+                cuisineDropdown.appendChild(option);
+            });
+        }
+
+        function updateRestaurantList(restaurants) {
+            const list = document.getElementById("restaurant-list");
+            list.innerHTML = ""; // Clear previous entries
+
+            const seen = new Set(); // Store unique restaurant names
+
+            restaurants.forEach(restaurant => {
+                const name = restaurant.properties.name;
+                if (!seen.has(name)) { // Only add unique restaurants
+                    seen.add(name);
+                    const li = document.createElement("li");
+                    li.innerHTML = `<strong>${name}</strong><br>${restaurant.properties.address}`;
+                    list.appendChild(li);
+                }
+            });
+        }
+
+        // Function to Fetch Isochrone Data & Filter Restaurants
+        function updateIsochrone() {
+            if (!userLocation) return alert("Please select a location first.");
+
+            const travelTime = document.getElementById("travel-time").value;
+            const cuisineType = document.getElementById("cuisine").value;
+
+            // If "All" is selected for travel time, just filter by cuisine
+            if (travelTime === "all") {
+                console.log("ℹ️ 'All' selected: Filtering by cuisine only.");
+
+                // Remove previous isochrone if any
+                clearPreviousSelections();
+
+                // Filter restaurants only by cuisine type
+                const filteredRestaurants = {
+                    type: "FeatureCollection",
+                    features: restaurantData.features.filter(feature => 
+                        cuisineType === "all" || feature.properties.cuisine_type.includes(cuisineType)
+                    )
+                };
+
+                // Update restaurant points on the map
+                if (map.getSource("restaurants")) {
+                    map.getSource("restaurants").setData(filteredRestaurants);
+                }
+
+                // Update restaurant list
+                updateRestaurantList(filteredRestaurants.features);
+                return;
+            }
+
+            // If a travel time is selected, apply isochrone filtering
+            const isochroneUrl = `https://api.mapbox.com/isochrone/v1/mapbox/walking/${userLocation[0]},${userLocation[1]}?contours_minutes=${travelTime}&polygons=true&access_token=${mapboxgl.accessToken}`;
+
+            fetch(isochroneUrl)
+                .then(response => response.json())
+                .then(isochrone => {
+                    console.log("✅ Isochrone Data:", isochrone);
+
+                    // Remove previous isochrone
+                    clearPreviousSelections();
+
+                    // Add new isochrone layer first, then update restaurants
+                    map.addSource("isochrone", { type: "geojson", data: isochrone });
+                    map.addLayer({
+                        id: "isochrone-layer",
+                        type: "fill",
+                        source: "isochrone",
+                        layout: {},
+                        paint: { "fill-color": "#007bff", "fill-opacity": 0.3 }
+                    });
+
+                    isochroneExists = true;
+
+                    map.moveLayer("restaurants-layer");
+
+                    // Filter restaurants inside the isochrone and by cuisine type
+                    const filteredRestaurants = {
+                        type: "FeatureCollection",
+                        features: restaurantData.features.filter(feature => 
+                            turf.booleanPointInPolygon(feature.geometry, isochrone.features[0].geometry) &&
+                            (cuisineType === "all" || feature.properties.cuisine_type.includes(cuisineType))
+                        )
+                    };
+
+                    // Update restaurant points on the map
+                    if (map.getSource("restaurants")) {
+                        map.getSource("restaurants").setData(filteredRestaurants);
+                    }
+
+                    // Update restaurant list
+                    updateRestaurantList(filteredRestaurants.features);
+                })
+                .catch(error => console.error("❌ Error fetching Isochrone:", error));
+        }
+
+        // Function to Clear All Selections
+        function clearSelection() {
+            geocoder.clear();
+            document.getElementById("cuisine").value = "all";
+            document.getElementById("travel-time").value = "all";
+
+            if (locationMarker) {
+                locationMarker.remove();
+                locationMarker = null;
+            }
+
+            if (isochroneExists) {
+                map.removeLayer("isochrone-layer");
+                map.removeSource("isochrone");
+                isochroneExists = false;
+            }
+
+            // Reset the restaurant data on the map
+            if (map.getSource("restaurants")) {
+                map.getSource("restaurants").setData(restaurantData);
+            }
+
+            // Reset the side panel to show all restaurants
+            updateRestaurantList(restaurantData.features);
+        }
+
+    </script>
+
+</body>
+</html>
