@@ -202,36 +202,48 @@
     <div class="menu-toggle" onclick="toggleMenu()">☰</div>
   </nav>
 
-  <!-- Mapbox Geocoder Search Bar -->
-  <div id="geocoder" class="geocoder"></div>
+    <div class="map-container">
+        <!-- Search Bar -->
+        <div id="geocoder" class="geocoder"></div>
+    
+        <!-- Filters -->
+        <div class="controls">
+            <div class="control-group">
+                <label for="cuisine">Cuisine:</label>
+                <select id="cuisine">
+                    <option value="all">All</option>
+                </select>
+            </div>
 
-  <div class="controls">
-    <div class="control-group">
-      <label for="cuisine">Cuisine:</label>
-      <select id="cuisine">
-        <option value="all">All</option>
-      </select>
+            <div class="control-group">
+                <label for="price">Price:</label>
+                <select id="price"><option value="all">All</option></select>
+            </div>
+    
+            <div class="control-group">
+                <label for="travel-time">Travel Time (mins):</label>
+                <select id="travel-time">
+                    <option value="all" selected>All</option>
+                    <option value="10">10 min</option>
+                    <option value="20">20 min</option>
+                    <option value="30">30 min</option>
+                </select>
+            </div>
+    
+            <button class="apply-button" onclick="updateIsochrone()">Apply Filters</button>
+            <button class="clear-button" onclick="clearSelection()">Clear Selection</button>
+        </div>
+    
+        <!-- Side Panel for Restaurant List -->
+        <div class="side-panel">
+            <h2>Restaurants</h2>
+            <ul id="restaurant-list" class="restaurant-list"></ul>
+        </div>
+    
+        <!-- Map -->
+        <div id="map"></div>
     </div>
-    <div class="control-group">
-      <label for="travel-time">Travel Time (mins):</label>
-      <select id="travel-time">
-        <option value="all" selected>All</option>
-        <option value="10">10 min</option>
-        <option value="20">20 min</option>
-        <option value="30">30 min</option>
-      </select>
-    </div>
-    <button class="apply-button" onclick="updateIsochrone()">Apply Filters</button>
-    <button class="clear-button" onclick="clearSelection()">Clear Selection</button>
-  </div>
-
-  <!-- Side Panel for Restaurant List -->
-  <div class="side-panel">
-    <h2>Restaurants</h2>
-    <ul id="restaurant-list" class="restaurant-list"></ul>
-  </div>
-
-  <div id="map"></div>
+    
 
   <script>
     // Mobile menu toggle
@@ -262,15 +274,16 @@
     });
     document.getElementById("geocoder").appendChild(geocoder.onAdd(map));
 
-    // Handle Geocoder Selection
-    geocoder.on("result", (event) => {
-      userLocation = event.result.geometry.coordinates;
-      console.log("✅ Geocoded Location:", userLocation);
-      map.flyTo({ center: userLocation, zoom: 13 });
-      clearPreviousSelections();
-      addLocationMarker(userLocation);
-      updateIsochrone();
-    });
+        // Handle Geocoder Selection
+        geocoder.on("result", (event) => {
+            userLocation = event.result.geometry.coordinates;
+
+            map.flyTo({ center: userLocation, zoom: 13 });
+
+            clearPreviousSelections();
+            addLocationMarker(userLocation);
+            updateIsochrone();
+        });
 
     // Function to Add Location Marker
     function addLocationMarker(coords) {
@@ -291,45 +304,73 @@
       }
     }
 
-    // Load GeoJSON Data for Restaurants
-    fetch("assets/seattle_restaurants_final.geojson")
-      .then(response => response.json())
-      .then(data => {
-        restaurantData = data;
-        map.on("load", () => {
-          map.addSource("restaurants", { type: "geojson", data: restaurantData });
-          map.addLayer({
-            id: "restaurants-layer",
-            type: "circle",
-            source: "restaurants",
-            paint: {
-              "circle-radius": 8,
-              "circle-color": "#000000",
-              "circle-stroke-width": 1,
-              "circle-stroke-color": "#ffffff"
-            }
-          });
-          updateRestaurantList(restaurantData.features);
-          populateCuisineDropdown();
-        });
-      });
+        // Load GeoJSON Data for Restaurants
+        fetch("assets/seattle_restaurants_final.geojson")
+            .then(response => response.json())
+            .then(data => {
+                restaurantData = data;
 
-    // Populate Cuisine Dropdown
-    function populateCuisineDropdown() {
-      const cuisineSet = new Set();
-      restaurantData.features.forEach(feature => {
-        if (Array.isArray(feature.properties.cuisine_type)) {
-          feature.properties.cuisine_type.forEach(cuisine => cuisineSet.add(cuisine));
+                map.on("load", () => {
+                    map.addSource("restaurants", { type: "geojson", data: restaurantData });
+                    map.addLayer({
+                        id: "restaurants-layer",
+                        type: "circle",
+                        source: "restaurants",
+                        paint: {
+                            "circle-radius": 8,              // Keep circle size
+                            "circle-color": "#000000",       // Black color
+                            "circle-stroke-width": 1,        // Thin white border
+                            "circle-stroke-color": "#ffffff" // White border color
+                        }
+                    });
+
+                    updateRestaurantList(restaurantData.features);
+                    populateCuisineDropdown();
+                    populatePriceDropdown();
+                });
+            });
+
+        // Populate Cuisine Dropdown
+        function populateCuisineDropdown() {
+            const cuisineSet = new Set();
+            restaurantData.features.forEach(feature => {
+                if (Array.isArray(feature.properties.cuisine_type)) {
+                    feature.properties.cuisine_type.forEach(cuisine => cuisineSet.add(cuisine));
+                }
+            });
+
+            const cuisineDropdown = document.getElementById("cuisine");
+            cuisineSet.forEach(cuisine => {
+                const option = document.createElement("option");
+                option.value = cuisine;
+                option.textContent = cuisine;
+                cuisineDropdown.appendChild(option);
+            });
         }
-      });
-      const cuisineDropdown = document.getElementById("cuisine");
-      cuisineSet.forEach(cuisine => {
-        const option = document.createElement("option");
-        option.value = cuisine;
-        option.textContent = cuisine;
-        cuisineDropdown.appendChild(option);
-      });
-    }
+
+        // Populate Price Dropdown
+        function populatePriceDropdown() {
+            const priceSet = new Set();
+
+            // Collect unique price values from the dataset
+            restaurantData.features.forEach(feature => {
+                const price = feature.properties.price;
+                if (price) { // Ensure price is not null or undefined
+                    priceSet.add(price);
+                }
+            });
+
+            const priceDropdown = document.getElementById("price");
+            priceDropdown.innerHTML = '<option value="all">All</option>'; // Reset dropdown
+
+            priceSet.forEach(priceLevel => {
+                const option = document.createElement("option");
+                option.value = priceLevel;
+                option.textContent = priceLevel;
+                priceDropdown.appendChild(option);
+            });
+        }
+
 
     function updateRestaurantList(restaurants) {
       const list = document.getElementById("restaurant-list");
@@ -346,76 +387,114 @@
       });
     }
 
-    // Function to Fetch Isochrone Data & Filter Restaurants
-    function updateIsochrone() {
-      if (!userLocation) return alert("Please select a location first.");
-      const travelTime = document.getElementById("travel-time").value;
-      const cuisineType = document.getElementById("cuisine").value;
-      if (travelTime === "all") {
-        console.log("ℹ️ 'All' selected: Filtering by cuisine only.");
-        clearPreviousSelections();
-        const filteredRestaurants = {
-          type: "FeatureCollection",
-          features: restaurantData.features.filter(feature =>
-            cuisineType === "all" || feature.properties.cuisine_type.includes(cuisineType)
-          )
-        };
-        if (map.getSource("restaurants")) {
-          map.getSource("restaurants").setData(filteredRestaurants);
-        }
-        updateRestaurantList(filteredRestaurants.features);
-        return;
-      }
-      const isochroneUrl = `https://api.mapbox.com/isochrone/v1/mapbox/walking/${userLocation[0]},${userLocation[1]}?contours_minutes=${travelTime}&polygons=true&access_token=${mapboxgl.accessToken}`;
-      fetch(isochroneUrl)
-        .then(response => response.json())
-        .then(isochrone => {
-          console.log("✅ Isochrone Data:", isochrone);
-          clearPreviousSelections();
-          map.addSource("isochrone", { type: "geojson", data: isochrone });
-          map.addLayer({
-            id: "isochrone-layer",
-            type: "fill",
-            source: "isochrone",
-            layout: {},
-            paint: { "fill-color": "#007bff", "fill-opacity": 0.3 }
-          });
-          isochroneExists = true;
-          map.moveLayer("restaurants-layer");
-          const filteredRestaurants = {
-            type: "FeatureCollection",
-            features: restaurantData.features.filter(feature =>
-              turf.booleanPointInPolygon(feature.geometry, isochrone.features[0].geometry) &&
-              (cuisineType === "all" || feature.properties.cuisine_type.includes(cuisineType))
-            )
-          };
-          if (map.getSource("restaurants")) {
-            map.getSource("restaurants").setData(filteredRestaurants);
-          }
-          updateRestaurantList(filteredRestaurants.features);
-        })
-        .catch(error => console.error("❌ Error fetching Isochrone:", error));
-    }
+        // Function to Fetch Isochrone Data & Filter Restaurants
+        function updateIsochrone() {
+            if (!userLocation) return alert("Please select a location first.");
 
-    // Function to Clear All Selections
-    function clearSelection() {
-      geocoder.clear();
-      document.getElementById("cuisine").value = "all";
-      document.getElementById("travel-time").value = "all";
-      if (locationMarker) {
-        locationMarker.remove();
-        locationMarker = null;
-      }
-      if (isochroneExists) {
-        map.removeLayer("isochrone-layer");
-        map.removeSource("isochrone");
-        isochroneExists = false;
-      }
-      if (map.getSource("restaurants")) {
-        map.getSource("restaurants").setData(restaurantData);
-      }
-      updateRestaurantList(restaurantData.features);
-    }
-  </script>
+            const travelTime = document.getElementById("travel-time").value;
+            const cuisineType = document.getElementById("cuisine").value;
+            const priceLevel = document.getElementById("price").value;
+
+            // If "All" is selected for travel time, just filter by cuisine and price
+            if (travelTime === "all") {
+                console.log("ℹ️ 'All' selected: Filtering by cuisine and price only.");
+
+                // Remove previous isochrone if any
+                clearPreviousSelections();
+
+                // Filter restaurants only by cuisine type and price
+                const filteredRestaurants = {
+                    type: "FeatureCollection",
+                    features: restaurantData.features.filter(feature => 
+                        (cuisineType === "all" || feature.properties.cuisine_type.includes(cuisineType)) &&
+                        (priceLevel === "all" || feature.properties.price.includes(priceLevel))
+                    )
+                };
+
+                // Update restaurant points on the map
+                if (map.getSource("restaurants")) {
+                    map.getSource("restaurants").setData(filteredRestaurants);
+                }
+
+                // Update restaurant list
+                updateRestaurantList(filteredRestaurants.features);
+                return;
+            }
+
+            // If a travel time is selected, apply isochrone filtering
+            const isochroneUrl = `https://api.mapbox.com/isochrone/v1/mapbox/walking/${userLocation[0]},${userLocation[1]}?contours_minutes=${travelTime}&polygons=true&access_token=${mapboxgl.accessToken}`;
+
+            fetch(isochroneUrl)
+                .then(response => response.json())
+                .then(isochrone => {
+
+                    // Remove previous isochrone
+                    clearPreviousSelections();
+
+                    // Add new isochrone layer first, then update restaurants
+                    map.addSource("isochrone", { type: "geojson", data: isochrone });
+                    map.addLayer({
+                        id: "isochrone-layer",
+                        type: "fill",
+                        source: "isochrone",
+                        layout: {},
+                        paint: { "fill-color": "#007bff", "fill-opacity": 0.3 }
+                    });
+
+                    isochroneExists = true;
+
+                    map.moveLayer("restaurants-layer");
+
+                    // Filter restaurants inside the isochrone and by cuisine type and price
+                    const filteredRestaurants = {
+                        type: "FeatureCollection",
+                        features: restaurantData.features.filter(feature => 
+                            turf.booleanPointInPolygon(feature.geometry, isochrone.features[0].geometry) &&
+                            (cuisineType === "all" || feature.properties.cuisine_type.includes(cuisineType)) &&
+                            (priceLevel === "all" || feature.properties.price.includes(priceLevel))
+                        )
+                    };
+
+                    // Update restaurant points on the map
+                    if (map.getSource("restaurants")) {
+                        map.getSource("restaurants").setData(filteredRestaurants);
+                    }
+
+                    // Update restaurant list
+                    updateRestaurantList(filteredRestaurants.features);
+                })
+                .catch(error => console.error("Error fetching Isochrone:", error));
+        }
+
+
+        // Function to Clear All Selections
+        function clearSelection() {
+            geocoder.clear();
+            document.getElementById("cuisine").value = "all";
+            document.getElementById("price").value = "all";
+            document.getElementById("travel-time").value = "all";
+
+            if (locationMarker) {
+                locationMarker.remove();
+                locationMarker = null;
+            }
+
+            if (isochroneExists) {
+                map.removeLayer("isochrone-layer");
+                map.removeSource("isochrone");
+                isochroneExists = false;
+            }
+
+            // Reset the restaurant data on the map
+            if (map.getSource("restaurants")) {
+                map.getSource("restaurants").setData(restaurantData);
+            }
+
+            // Reset the side panel to show all restaurants
+            updateRestaurantList(restaurantData.features);
+        }
+
+    </script>
+
 </body>
 </html>
